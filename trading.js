@@ -1,8 +1,11 @@
 /* Akun Trading MT4/MT5 — trading.js
+   Tiga sumber data: backend Python (MT5/MT4), demo lokal, impor laporan.
    Hanya untuk trading.html. TIDAK menyentuh script.js kalkulator. */
 "use strict";
 const $ = id => document.getElementById(id);
 const apiBase = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:5000";
+let BACKEND_OK = false;   // backend Python aktif?
+let SRC = null;           // sumber data aktif (backend / demo / impor)
 
 async function api(path, opts = {}) {
   let res, data;
@@ -42,11 +45,12 @@ function setConnectedUI(s) {
   $("refreshBtn").hidden = !s.connected;
   modePill.hidden = !s.connected;
   if (s.connected) {
-    const isDemo = s.mode === "demo";
+    const isDemo = s.mode === "demo", isImp = s.mode === "import";
     pill.textContent = "Terhubung · " + (s.label || s.platform.toUpperCase());
-    pill.className = "pill " + (isDemo ? "" : "live");
-    modePill.textContent = isDemo ? "MODE DEMONSTRASI — data contoh" : "LIVE (read-only)";
-    modePill.className = "pill" + (isDemo ? "" : " live");
+    pill.className = "pill " + (isDemo || isImp ? "" : "live");
+    modePill.textContent = isDemo ? "MODE DEMONSTRASI — data contoh"
+      : isImp ? "DATA IMPOR — offline dari file" : "LIVE (read-only)";
+    modePill.className = "pill" + (isDemo || isImp ? "" : " live");
     CURR = (s.account && s.account.currency) || "USD";
     $("aiLogin").textContent = (s.account && s.account.login) || "–";
     $("aiBroker").textContent = (s.account && s.account.broker) || "–";
@@ -73,6 +77,7 @@ function platformRows() {
 
 async function saveAccount() {
   const p = $("platform").value;
+  if (p === "demo") return null; // demo berjalan lokal, tidak perlu disimpan
   const body = { platform: p, label: "" };
   if (p !== "demo") {
     body.login = $("login").value.trim();
@@ -82,8 +87,6 @@ async function saveAccount() {
       body.bridge_host = $("bridgeHost").value.trim();
       body.bridge_port = $("bridgePort").value.trim();
     }
-  } else {
-    body.login = $("login").value.trim() || ("demo-" + Math.random().toString(36).slice(2, 6));
   }
   const r = await api("accounts", { method: "POST", body });
   await loadAccounts();
@@ -93,12 +96,24 @@ async function saveAccount() {
 async function connectForm() {
   const msg = $("connMsg");
   try {
-    setMsg(msg, "Menyambungkan…");
     const p = $("platform").value;
+    if (p === "demo") {                 // demo: murni di browser
+      setMsg(msg, "Menyiapkan data demonstrasi…");
+      SRC = Sources.demo($("login").value.trim());
+      setMsg(msg, "Terhubung ke data demonstrasi (lokal di browser).", "ok");
+      await afterConnectLocal();
+      return;
+    }
+    if (!BACKEND_OK) {                  // MT5/MT4 butuh backend
+      showBackendBanner();
+      throw { message: "Mode " + p.toUpperCase()
+        + " membutuhkan backend Python. Tanpa backend, gunakan kartu Impor laporan di bawah atau mode demonstrasi." };
+    }
+    setMsg(msg, "Menyambungkan…");
     // pakai akun tersimpan bila form cocok; kalau tidak, simpan dulu
     const acc = await saveAccount();
     const r = await api("connect", { method: "POST", body: { account_id: acc.id } });
-    setMsg(msg, p === "demo" ? "Terhubung ke data demonstrasi." : "Terhubung.", "ok");
+    setMsg(msg, "Terhubung.", "ok");
     await afterConnect(r);
   } catch (e) {
     setMsg(msg, e.message || "Gagal terhubung.", "bad");
@@ -112,25 +127,74 @@ async function afterConnect(r) {
   await loadDashboard(currentPeriod);
 }
 
-async function disconnect() {
-  try { await api("disconnect", { method: "POST" }); } catch (e) { }
-  const s = await api("status");
+async function afterConnectLocal() {
+  const s = SRC.snapshot();
   setConnectedUI(s);
+  await loadDashboard(currentPeriod);
+}
+
+function showBackendBanner() {
+  const b = $("backendBanner");
+  b.hidden = false;
+  b.innerHTML = 'Mode MT5/MT4 membutuhkan backend Python di komputermu '
+    + '(<code>pip install -r backend/requirements.txt</code> lalu <code>python backend/app.py</code>). '
+    + 'Tanpa backend kamu tetap bisa memakai <b>Impor laporan</b> atau <b>mode demonstrasi</b> — '
+    + 'keduanya berjalan murni di browser. Panduan: <code>docs/MT4-MT5-FITUR.md</code>.';
+}
+
+async function applyImportedDataset(ds, fileName, silent) {
+  SRC = Sources.imported(ds);
+  const res = saveImported(ds, fileName);
+  $("importClear").hidden = false;
+  await afterConnectLocal();
+  await loadAccounts();
+  if (!silent) {
+    setMsg($("importMsg"),
+      "Impor berhasil: " + ds.deals.length + " transaksi"
+      + (ds.deposits.length ? ", " + ds.deposits.length + " operasi balance" : "")
+      + "." + (res.saved ? "" : " Catatan: " + res.reason), "ok");
+    setMsg($("connMsg"), "Data impor dimuat.", "ok");
+  }
+}
+
+async function disconnect() {
+  if (SRC && SRC.backend) {
+    try { await api("disconnect", { method: "POST" }); } catch (e) { }
+    const s = await api("status");
+    setConnectedUI(s);
+  } else {
+    SRC = null;
+    setConnectedUI({ connected: false });
+  }
   setMsg($("connMsg"), "Koneksi diputus.");
 }
 
 /* ---------------- daftar akun ---------------- */
+function importItem() {
+  const imp = loadImported();
+  if (!imp) return null;
+  return { label: imp.meta.login ? "Impor " + imp.meta.login : "Data impor",
+    info: (imp.file_name || "laporan") + " · " + imp.deals.length + " transaksi" };
+}
+
 async function loadAccounts() {
-  const d = await api("accounts");
   const box = $("accList");
   box.innerHTML = "";
-  if (!d.accounts.length) {
+  let items = [], active = null;
+  if (BACKEND_OK) {
+    try {
+      const d = await api("accounts");
+      items = d.accounts; active = d.active;
+    } catch (e) { /* backend hilang tiba-tiba */ }
+  }
+  const imp = importItem();
+  if (!items.length && !imp) {
     box.innerHTML = '<p class="hint">Belum ada akun tersimpan.</p>';
     return;
   }
-  for (const a of d.accounts) {
+  for (const a of items) {
     const el = document.createElement("div");
-    el.className = "accitem" + (a.id === d.active ? " active" : "");
+    el.className = "accitem" + (a.id === active ? " active" : "");
     const tag = a.platform === "demo" ? "DEMO" : a.platform.toUpperCase();
     el.innerHTML = `<div class="meta"><b>${escapeHtml(a.label || a.login)}</b>
       <span>${tag} · ${escapeHtml(a.login || "–")}${a.server ? " · " + escapeHtml(a.server) : ""}</span></div>`;
@@ -143,9 +207,34 @@ async function loadAccounts() {
     el.append(bPilih, bHapus);
     box.appendChild(el);
   }
+  if (imp) {
+    const el = document.createElement("div");
+    el.className = "accitem" + (SRC && SRC.mode === "import" ? " active" : "");
+    el.innerHTML = `<div class="meta"><b>${escapeHtml(imp.label)}</b>
+      <span>IMPOR · ${escapeHtml(imp.info)}</span></div>`;
+    const bPakai = document.createElement("button");
+    bPakai.className = "btn"; bPakai.type = "button"; bPakai.textContent = "Pakai";
+    bPakai.onclick = async () => {
+      const ds = loadImported();
+      try { await applyImportedDataset(ds, ds.file_name, false); }
+      catch (e) { setMsg($("importMsg"), e.message, "bad"); }
+    };
+    const bHapus = document.createElement("button");
+    bHapus.className = "btn"; bHapus.type = "button"; bHapus.textContent = "Hapus";
+    bHapus.onclick = async () => {
+      clearImported();
+      if (SRC && SRC.mode === "import") { SRC = null; setConnectedUI({ connected: false }); }
+      $("importClear").hidden = true;
+      setMsg($("importMsg"), "Data impor dihapus.");
+      await loadAccounts();
+    };
+    el.append(bPakai, bHapus);
+    box.appendChild(el);
+  }
 }
 
 async function connectById(id) {
+  if (!BACKEND_OK) { showBackendBanner(); return; }
   setMsg($("connMsg"), "Menyambungkan akun…");
   try {
     await api("connect", { method: "POST", body: { account_id: id } });
@@ -155,6 +244,7 @@ async function connectById(id) {
 }
 
 async function removeAccount(id) {
+  if (!BACKEND_OK) { showBackendBanner(); return; }
   if (!confirm("Hapus akun tersimpan ini?")) return;
   await api("accounts/" + id, { method: "DELETE" });
   await loadAccounts();
@@ -171,14 +261,23 @@ async function loadDashboard(period) {
   document.querySelectorAll("#periods button").forEach(b =>
     b.classList.toggle("active", b.dataset.p === period));
   $("customRange").hidden = period !== "custom";
-  const q = periodQ();
-  const [sum, hist, curve] = await Promise.all([
-    api("summary" + q), api("history" + q + "&limit=100"), api("curve" + q)
-  ]);
-  currentMode = sum.mode;
-  renderSummary(sum, hist.total);
-  renderCurve(curve.points || []);
-  renderHistory(hist);
+  if (!SRC) throw { message: "Belum ada sumber data. Hubungkan akun atau impor laporan." };
+  if (SRC.backend) {
+    const q = periodQ();
+    const [sum, hist, curve] = await Promise.all([
+      api("summary" + q), api("history" + q + "&limit=100"), api("curve" + q)
+    ]);
+    currentMode = sum.mode;
+    renderSummary(sum, hist.total);
+    renderCurve(curve.points || []);
+    renderHistory(hist);
+  } else {
+    const d = SRC.dashboard(period, $("fromDate").value, $("toDate").value);
+    currentMode = d.summary.mode;
+    renderSummary(d.summary, d.hist.total);
+    renderCurve(d.curve.points || []);
+    renderHistory(d.hist);
+  }
 }
 
 function periodQ() {
@@ -192,8 +291,8 @@ function periodQ() {
 }
 
 function renderSummary(s, totalHist) {
-  CURR = s.balance !== null ? CURR : CURR;
-  $("dashLabel").textContent = (s.mode === "demo" ? "[DEMO] " : "") + "Ringkasan akun";
+  $("dashLabel").textContent = (s.mode === "demo" ? "[DEMO] "
+    : s.mode === "import" ? "[IMPOR] " : "") + "Ringkasan akun";
   $("mBalance").textContent = money(s.balance);
   $("mEquity").textContent = money(s.equity);
   const fl = $("mFloating");
@@ -302,6 +401,32 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ---------------- impor laporan (tanpa backend) ---------------- */
+(function initImportUI() {
+  const f = $("impFile");
+  if (!f) return;
+  $("impBtn").addEventListener("click", () => f.click());
+  f.addEventListener("change", async () => {
+    const file = f.files && f.files[0];
+    if (!file) return;
+    setMsg($("importMsg"), "Membaca " + file.name + "…");
+    try {
+      const text = await file.text();
+      const ds = parseReport(text, file.name);
+      await applyImportedDataset(ds, file.name, false);
+    } catch (e) {
+      setMsg($("importMsg"), e.message || "Gagal membaca file.", "bad");
+    } finally { f.value = ""; }
+  });
+  $("importClear").addEventListener("click", async () => {
+    clearImported();
+    if (SRC && SRC.mode === "import") { SRC = null; setConnectedUI({ connected: false }); }
+    $("importClear").hidden = true;
+    setMsg($("importMsg"), "Data impor dihapus.");
+    await loadAccounts();
+  });
+})();
+
 /* ---------------- inisialisasi ---------------- */
 $("platform").addEventListener("change", platformRows);
 $("connectBtn").addEventListener("click", () => connectForm().catch(e => setMsg($("connMsg"), e.message, "bad")));
@@ -324,16 +449,31 @@ function showDashErr(e) { setMsg($("connMsg"), e.message || "Gagal memuat data."
   platformRows();
   try {
     await api("health");
+    BACKEND_OK = true;
   } catch (e) {
-    $("backendBanner").hidden = false;
-    return;
+    BACKEND_OK = false;  // halaman tetap hidup: demo & impor jalan tanpa backend
   }
-  try {
-    const s = await api("status");
-    setConnectedUI(s);
-    if (s.connected) await loadDashboard(currentPeriod);
-    await loadAccounts();
-  } catch (e) {
-    setMsg($("connMsg"), e.message, "bad");
+  if (BACKEND_OK) {
+    try {
+      const s = await api("status");
+      if (s.connected) {
+        SRC = Sources.backend();
+        setConnectedUI(s);
+        await loadDashboard(currentPeriod);
+      }
+      await loadAccounts();
+    } catch (e) {
+      setMsg($("connMsg"), e.message, "bad");
+    }
+  }
+  if (!SRC) {
+    const imp = loadImported();
+    if (imp) {
+      try { await applyImportedDataset(imp, imp.file_name, true); }
+      catch (e) { setMsg($("importMsg"), e.message, "bad"); }
+      $("importClear").hidden = false;
+    }
+  } else if (loadImported()) {
+    $("importClear").hidden = false;
   }
 })();

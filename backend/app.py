@@ -89,7 +89,8 @@ def static_files(fname: str):
     if fname.startswith("backend/") or fname.startswith("api/") or fname.startswith("."):
         return err("FORBIDDEN", "Path ini tidak dilayani.", 404)
     allowed = ("index.html", "trading.html", "style.css", "script.js",
-               "trading.css", "trading.js", "README.md")
+               "trading.css", "trading.js", "trading-direct.js",
+               "trading-import.js", "README.md")
     if fname not in allowed:
         return err("FORBIDDEN", "Path ini tidak dilayani.", 404)
     return send_from_directory(config.PROJECT_ROOT, fname)

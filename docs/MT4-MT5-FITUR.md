@@ -47,6 +47,32 @@ python backend/app.py
 Tanpa backend, halaman `trading.html` tetap terbuka (mis. dari GitHub Pages) dan
 menampilkan banner "Backend tidak aktif" — kalkulator tetap berfungsi normal.
 
+## Mode tanpa backend (tanpa Python)
+
+`trading.html` kini punya tiga sumber data dan **dua di antaranya tidak butuh
+backend sama sekali** — halaman bisa dibuka langsung (klik dua kali), dari
+GitHub Pages, atau hosting statis seperti Vercel:
+
+1. **Impor laporan** — kartu "Impor laporan (tanpa server)":
+   - File JSON dari skrip ekspor `mt-export/` (paling akurat; MT4 & MT5, termasuk deposit/withdrawal).
+   - Laporan HTML resmi MT4/MT5 (Account History → Save as Report, atau Reports → History Report) — parser best-effort.
+   - CSV dengan kolom waktu/tipe/volume/profit.
+   - Semua dihitung di browser; file TIDAK diunggah ke mana pun. Data tersimpan
+     di localStorage browser dan bisa dihapus lewat tombol "Hapus data impor".
+2. **Mode demonstrasi** — data contoh dibangkitkan di browser, tanpa backend.
+3. **Live via backend Python** (opsional) — jalur MT5/MT4 seperti dijelaskan bagian lain dokumen ini.
+
+Batasan mode impor: data statis (snapshot saat ekspor), posisi terbuka & floating
+P/L tidak tersedia, dan waktu memakai waktu server broker. Banner peringatan
+hanya muncul bila kamu mencoba mode MT5/MT4 saat backend mati — demo dan impor
+tetap berfungsi normal.
+
+Catatan hosting: backend Flask ini **tidak cocok** dideploy ke platform serverless
+Linux (mis. Vercel) — paket `MetaTrader5` resmi hanya jalan di Windows,
+filesystem serverless efemeral (penyimpanan akun hilang), dan koneksi TCP ke
+terminal di rumah tidak tembus dari cloud. Untuk live, pakai PC Windows sendiri
+atau VPS.
+
 ## Konektor
 
 | Platform | Cara kerja | Persyaratan | Status pengujian di repo ini |
@@ -54,6 +80,7 @@ menampilkan banner "Backend tidak aktif" — kalkulator tetap berfungsi normal.
 | **MT5** | Paket resmi `MetaTrader5` (`initialize(login,password,server)`, `history_deals_get`, `positions_get`) | **Windows** + terminal MT5 terpasang & pernah dibuka; `pip install MetaTrader5` | Unit test dengan modul tiruan. Koneksi nyata **belum bisa diuji** di lingkungan Linux ini |
 | **MT4** | Protokol **PyTrader**: EA berjalan di terminal MT4 dan membuka server TCP (default port 2345); backend mengirim perintah `F001`/`F002`/`F061`/`F062` dengan pemisah `^` dan terminator `!` | Terminal MT4 (Windows/Wine/VPS) + EA PyTrader terpasang & aktif; IP/port bridge diisi di form | Unit test dengan socket tiruan sesuai format protokol. Koneksi nyata **belum bisa diuji** |
 | **Demo** | Data contoh deterministik per seed, **diberi label DEMO di UI** | Tidak ada | Teruji penuh (dipakai untuk dashboard & pengujian) |
+| **Impor laporan** | File JSON/HTML/CSV diproses 100% di browser | Tidak ada (tanpa Python, tanpa koneksi) | Teruji (parser + statistik, lihat "Mode tanpa backend") |
 
 Field mapping protokol PyTrader mengikuti `Pytrader_API_V4_01.py` (format respons
 `Fxxx^...^` dengan record dipisah `$`). Bila versi EA kamu berbeda dan field tidak

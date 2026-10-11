@@ -17,13 +17,11 @@
   <header>
     <p class="back"><a href="index.html">&#8592; Kalkulator XAUUSD</a></p>
     <h1>Akun Trading</h1>
-    <p>Hubungkan akun MetaTrader 4/5 untuk melihat statistik trading secara otomatis — balance, equity, win rate, profit factor, hingga riwayat transaksi. Koneksi bersifat <b>read-only</b>: tidak ada order yang bisa dikirim dari sini.</p>
+    <p>Hubungkan akun MetaTrader 4/5 untuk melihat statistik trading secara otomatis — balance, equity, win rate, profit factor, hingga riwayat transaksi. Koneksi bersifat <b>read-only</b>: tidak ada order yang bisa dikirim dari sini.<br>
+    Tiga cara pakai: <b>(1)</b> Impor laporan MT4/MT5 — tanpa install apa pun; <b>(2)</b> mode demonstrasi — data contoh; <b>(3)</b> live via backend Python (opsional).</p>
   </header>
 
-  <div id="backendBanner" class="banner bad" hidden>
-    Backend trading tidak aktif. Jalankan <code>python backend/app.py</code> dari folder repo, lalu buka halaman ini lewat
-    <code>http://127.0.0.1:5000/trading.html</code>. Panduan lengkap: <code>docs/MT4-MT5-FITUR.md</code>.
-  </div>
+  <div id="backendBanner" class="banner bad" hidden></div>
 
   <div class="grid">
     <!-- ===================== KOLOM KIRI: KONEKSI ===================== -->
@@ -67,6 +65,21 @@
         <p class="hint">Password disimpan terenkripsi di backend dan tidak pernah dikirim balik ke halaman ini.</p>
         <div id="accList" class="acclist"><p class="hint">Belum ada akun tersimpan.</p></div>
       </section>
+
+      <section class="card">
+        <h2>Impor laporan (tanpa server)</h2>
+        <p class="hint">Tanpa Python sama sekali: ekspor riwayat akun dari MT4/MT5
+        (Account History &rarr; klik kanan &rarr; Save as Report, atau Reports &rarr; History Report),
+        lalu muat di sini. Semua dihitung di browser &mdash; <b>file tidak diunggah ke mana pun</b>.</p>
+        <input type="file" id="impFile" accept=".htm,.html,.csv,.txt,.json" hidden>
+        <div class="chips">
+          <button type="button" class="btn primary" id="impBtn">Pilih file laporan&hellip;</button>
+          <button type="button" class="btn" id="importClear" hidden>Hapus data impor</button>
+        </div>
+        <p class="hint" id="importMsg"></p>
+        <p class="hint">Didukung: laporan HTML MT4/MT5, CSV berkolom waktu/tipe/volume/profit,
+        atau JSON hasil skrip ekspor di folder <code>mt-export/</code> (paling akurat).</p>
+      </section>
     </div>
 
     <!-- ===================== KOLOM KANAN: DASHBOARD ===================== -->
@@ -80,7 +93,7 @@
       <div class="empty" id="emptyState">
         <div class="emptybox">
           <b>Belum ada akun yang terhubung</b>
-          <p>Isi form koneksi di samping, atau lihat dulu cara kerjanya dengan data contoh yang diberi label <b>DEMO</b>.</p>
+          <p>Impor laporan MT4/MT5 dari kartu <b>Impor laporan</b> di samping — tanpa install apa pun — atau lihat dulu cara kerjanya dengan data contoh yang diberi label <b>DEMO</b>.</p>
           <button type="button" class="btn primary" id="demoBtn">Coba mode demonstrasi</button>
         </div>
       </div>
@@ -129,8 +142,10 @@
     </section>
   </div>
 
-  <p class="note">Konektor: MT5 memakai paket resmi <code>MetaTrader5</code> (butuh Windows + terminal), MT4 memakai protokol <code>PyTrader</code> (EA bridge di terminal). Integrasi read-only — tidak ada endpoint order.</p>
+  <p class="note">Konektor: MT5 memakai paket resmi <code>MetaTrader5</code> (butuh Windows + terminal), MT4 memakai protokol <code>PyTrader</code> (EA bridge di terminal). Integrasi read-only, tanpa endpoint order. Mode demo &amp; impor berjalan murni di browser (tanpa Python); live MT5/MT4 opsional via backend.</p>
 </div>
+<script src="trading-direct.js"></script>
+<script src="trading-import.js"></script>
 <script src="trading.js"></script>
 </body>
 </html>
