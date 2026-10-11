@@ -26,6 +26,10 @@ from connectors.mt4_pytrader import MT4PyTraderConnector
 from connectors.mt5_api import MT5Connector
 from services.store import AccountStore, StoreError
 from services import stats as stats_svc
+from mt5_bridge_adapter import get_manager, to_dict, ReadOnlyBridgeError
+from mt5_bridge import MT5BridgeError, NotConnectedError, TradeError
+from mt5_bridge.protocol import Timeframe
+import re
 import config
 
 app = Flask(__name__, static_folder=None)
@@ -353,6 +357,116 @@ def curve():
         return err("CONNECT", str(e), 502)
 
 
+# ------------------------------------------------ MT5 bridge (read-only)
+def _bridge_error_response(e: Exception):
+    """Petakan error bridge ke format error API yang konsisten."""
+    if isinstance(e, ReadOnlyBridgeError):
+        return err("READ_ONLY", str(e), 400)
+    if isinstance(e, (NotConnectedError, ConnectionError)):
+        return err("BRIDGE_DISCONNECTED",
+                   "MT5 EA belum terhubung ke bridge. Pastikan terminal MT5 "
+                   "berjalan dengan EA MT5SocketClient aktif.", 503)
+    if isinstance(e, TimeoutError):
+        return err("BRIDGE_TIMEOUT",
+                   "MT5 EA tidak menjawab dalam batas waktu.", 504)
+    if isinstance(e, TradeError):
+        return err("BRIDGE_COMMAND", f"Perintah gagal di sisi MT5: {e}", 502)
+    if isinstance(e, MT5BridgeError):
+        return err("BRIDGE", str(e), 502)
+    return err("INTERNAL", "Kesalahan internal bridge.", 500)
+
+
+@app.get("/api/trading/mt5bridge/status")
+@require_auth
+def bridge_status():
+    if not config.MT5_BRIDGE_ENABLED:
+        return jsonify({"enabled": False, "running": False, "connected": False,
+                        "read_only": True,
+                        "hint": "Set MT5_BRIDGE_ENABLED=1 lalu jalankan ulang "
+                                "backend untuk mengaktifkan bridge."})
+    return jsonify(get_manager().status())
+
+
+@app.get("/api/trading/mt5bridge/account")
+@require_auth
+def bridge_account():
+    if not config.MT5_BRIDGE_ENABLED:
+        return err("BRIDGE_DISABLED",
+                   "Bridge MT5 tidak diaktifkan (MT5_BRIDGE_ENABLED).", 503)
+    try:
+        info = get_manager().call_fn(lambda b: b.get_account())
+    except Exception as e:
+        return _bridge_error_response(e)
+    data = to_dict(info)
+    data["note"] = ("Server broker, jenis akun, dan mata uang tidak "
+                    "diekspos protokol bridge sumber (GET_ACCOUNT hanya "
+                    "balance/equity/margin/free_margin/leverage).")
+    return jsonify(data)
+
+
+@app.get("/api/trading/mt5bridge/price")
+@require_auth
+def bridge_price():
+    if not config.MT5_BRIDGE_ENABLED:
+        return err("BRIDGE_DISABLED",
+                   "Bridge MT5 tidak diaktifkan (MT5_BRIDGE_ENABLED).", 503)
+    symbol = request.args.get("symbol", "XAUUSD").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9._-]{2,20}", symbol):
+        return err("VALIDATION", "Parameter symbol tidak valid.", 400)
+    try:
+        tick = get_manager().call_fn(lambda b: b.get_tick(symbol))
+    except Exception as e:
+        return _bridge_error_response(e)
+    data = to_dict(tick)
+    data["symbol"] = symbol
+    data["spread"] = round(tick.ask - tick.bid, 5) \
+        if tick.ask and tick.bid else None
+    return jsonify(data)
+
+
+@app.get("/api/trading/mt5bridge/candles")
+@require_auth
+def bridge_candles():
+    if not config.MT5_BRIDGE_ENABLED:
+        return err("BRIDGE_DISABLED",
+                   "Bridge MT5 tidak diaktifkan (MT5_BRIDGE_ENABLED).", 503)
+    symbol = request.args.get("symbol", "XAUUSD").strip().upper()
+    tf = request.args.get("timeframe", "M1").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9._-]{2,20}", symbol):
+        return err("VALIDATION", "Parameter symbol tidak valid.", 400)
+    if tf not in ("M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"):
+        return err("VALIDATION",
+                   "timeframe harus salah dari: M1 M5 M15 M30 H1 H4 D1 W1 MN1",
+                   400)
+    try:
+        count = int(request.args.get("count", 100))
+    except ValueError:
+        return err("VALIDATION", "count harus angka.", 400)
+    if not 1 <= count <= 2000:
+        return err("VALIDATION", "count harus di rentang 1..2000.", 400)
+    try:
+        rates = get_manager().call_fn(
+            lambda b: b.get_rates(symbol, Timeframe(tf), count))
+    except Exception as e:
+        return _bridge_error_response(e)
+    return jsonify({"symbol": symbol, "timeframe": tf,
+                    "count": len(rates), "rates": rates})
+
+
+@app.get("/api/trading/mt5bridge/positions")
+@require_auth
+def bridge_positions():
+    if not config.MT5_BRIDGE_ENABLED:
+        return err("BRIDGE_DISABLED",
+                   "Bridge MT5 tidak diaktifkan (MT5_BRIDGE_ENABLED).", 503)
+    try:
+        positions = get_manager().call_fn(lambda b: b.get_positions())
+    except Exception as e:
+        return _bridge_error_response(e)
+    return jsonify({"count": len(positions),
+                    "positions": [to_dict(p) for p in positions]})
+
+
 @app.errorhandler(404)
 def not_found(_):
     return err("NOT_FOUND", "Endpoint tidak ditemukan.", 404)
@@ -367,6 +481,10 @@ if __name__ == "__main__":
     print(" * Akun Trading backend aktif di http://127.0.0.1:5000")
     print("   Kalkulator lama : http://127.0.0.1:5000/  (tidak berubah)")
     print("   Dashboard       : http://127.0.0.1:5000/trading.html")
+    if config.MT5_BRIDGE_ENABLED:
+        get_manager().start()
+        print(f"   MT5 bridge      : {config.MT5_BRIDGE_HOST}:"
+              f"{config.MT5_BRIDGE_PORT} (read-only, tunggu EA)")
     if not store.persistent_encryption:
         print("   ! PERINGATAN: TRADING_SECRET_KEY belum diset — kunci enkripsi")
         print("     acak per proses; password tersimpan tak terbaca setelah restart.")
