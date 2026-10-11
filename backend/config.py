@@ -34,3 +34,11 @@ MT5_TERMINAL_PATH = os.environ.get("TRADING_MT5_PATH", "").strip()
 
 # Batas jumlah akun tersimpan (mencegah penyalahgunaan)
 MAX_ACCOUNTS = int(os.environ.get("TRADING_MAX_ACCOUNTS", "20"))
+
+# ------------------------------------------------------------------
+# MT5 Socket Bridge (read-only) — adaptasi huy-bui-tech/mt5_api.
+# Lihat docs/MT5-BRIDGE.md. Default MATI; aktifkan eksplisit.
+# HANYA bind 127.0.0.1 kecuali kamu paham risikonya (lihat dokumen).
+MT5_BRIDGE_ENABLED = _bool("MT5_BRIDGE_ENABLED", "0")
+MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1").strip() or "127.0.0.1"
+MT5_BRIDGE_PORT = int(os.environ.get("MT5_BRIDGE_PORT", "1111"))
