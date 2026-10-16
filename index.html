@@ -21,6 +21,22 @@
   <div class="grid">
     <div class="side">
       <section class="card">
+        <h2>Rules Recovery</h2>
+        <p class="hint">Pilih rules — balance, risk, dan rasio terisi otomatis (pola tabel: naik +20%, SL 10%, recovery 7,41%).</p>
+        <label>Rules<select id="ruleSel"><option value="">— Manual (isi sendiri) —</option></select></label>
+        <div id="ruleInfo" hidden>
+          <div class="ruleFacts">
+            <div><b id="riBal">–</b><span id="riBalL">Balance rules ini</span></div>
+            <div><b id="riUp" class="up">–</b><span id="riUpL">Menang +20%</span></div>
+            <div><b id="riAft" class="dn">–</b><span id="riAftL">Setelah SL 10%</span></div>
+            <div><b id="riX" class="gold">–</b><span id="riXL">Recovery X</span></div>
+          </div>
+          <button type="button" class="btn rec" id="recBtn">Kalau SL → isi mode recovery</button>
+          <p class="hint" id="riNote"></p>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>Input</h2>
         <label class="hero">Maksimal SL (pips)<input id="plan" inputmode="decimal" placeholder="mis. 25" value="25"></label>
         <p class="hint">Cukup isi jarak SL maksimalmu — lot dihitung otomatis.</p>

@@ -216,3 +216,60 @@ try{const o=JSON.parse(localStorage.getItem("lotxau_mc")||"null");if(o)Object.en
 const _save=save;save=function(){_save();try{const o={};["wr","nTr","cost","ddLim","nSim"].forEach(k=>o[k]=$(k).value);o.comp=$("comp").checked;localStorage.setItem("lotxau_mc",JSON.stringify(o));}catch(e){}};
 const _calc=calc;calc=function(){_calc();scheduleMC();};
 calc();
+
+// ---- Rules Recovery (tabel 1-35, pola: naik +20%, SL 10%, X recovery 7,41%) ----
+// Balance rules n = round(200000 x 1.2^(n-1)) — terverifikasi persis sama dengan PDF tabel.
+const RULE_BALANCES=[200000,240000,288000,345600,414720,497664,597197,716636,859963,1031956,1238347,1486017,1783220,2139864,2567837,3081404,3697685,4437222,5324667,6389600,7667520,9201024,11041229,13249475,15899369,19079243,22895092,27474110,32968932,39562719,47475263,56970315,68364378,82037254,98444705];
+const ruleSel=$("ruleSel"),ruleInfo=$("ruleInfo");
+let ruleState={sel:"",mode:"normal"}; // mode: normal = main rules (10% · 1:2) | rec = recovery (X% · 1:1)
+// round-half-up eksak (tanpa galat float): round(B x m/10)
+const rDiv10=(v,d)=>Math.floor((v*d+5)/10);           // d=9 -> 0.9 ; d=12 -> 1.2
+function ruleData(n){
+  const B=RULE_BALANCES[n-1],after=rDiv10(B,9),sl=B-after;
+  const prev=n>=2?RULE_BALANCES[n-2]:null;
+  const diff=prev!=null?after-prev:B-after;           // rules 1: balik ke balance awal
+  const next=rDiv10(B,12);
+  return{n,B,after,sl,prev,next,diff,x:diff/after*100};
+}
+function fillInputs(bal,risk,ratio){$("balance").value=bal.toLocaleString("id-ID");$("risk").value=risk;$("ratio").value=ratio;calc();}
+function renderRule(){
+  const d=ruleData(+ruleState.sel),xpct=d.x.toFixed(2).replace(".",",");
+  ruleInfo.hidden=false;
+  $("riBal").textContent=idr(d.B);
+  $("riBalL").textContent="Balance Rules "+d.n;
+  $("riUp").textContent="+"+idr(d.next);
+  $("riUpL").textContent=d.n<35?`Menang +20% → Rules ${d.n+1}`:"Menang +20% (di luar tabel)";
+  $("riAft").textContent=idr(d.after);
+  $("riAftL").textContent=`Setelah SL 10% (−${idr(d.sl)})`;
+  $("riX").textContent=xpct+"%";
+  $("riXL").textContent=`X recovery: +${idr(d.diff)} → ${d.prev!=null?"Rules "+(d.n-1):"balance awal"}`;
+  if(ruleState.mode==="rec"){
+    $("recBtn").textContent="← Kembali ke mode rules (10% · 1:2)";
+    $("riNote").textContent=`Mode recovery aktif: balance = sisa setelah SL, risk ${xpct}% dengan rasio 1:1 — sekali menang balik persis ke balance Rules ${d.prev!=null?d.n-1:d.n}.`;
+  }else{
+    $("recBtn").textContent=`Kalau SL → isi mode recovery (${xpct}% · 1:1)`;
+    $("riNote").textContent=`Mode rules: risk 10% dengan rasio 1:2 → menang = +20% naik ke rules berikutnya. Isi "Maksimal SL (pips)" di bawah — lot langsung terhitung.`;
+  }
+}
+function applyRuleMode(){
+  const d=ruleData(+ruleState.sel);
+  if(ruleState.mode==="rec")fillInputs(d.after,d.x.toFixed(2).replace(".",","),"1");
+  else fillInputs(d.B,"10","2");
+  renderRule();
+}
+function saveRule(){try{localStorage.setItem("lotxau_rules",JSON.stringify(ruleState));}catch(e){}}
+RULE_BALANCES.forEach((b,i)=>{const o=document.createElement("option");o.value=String(i+1);o.textContent=`Rules ${i+1} · ${idr(b)}`;ruleSel.appendChild(o);});
+ruleSel.addEventListener("change",()=>{
+  ruleState.sel=ruleSel.value;ruleState.mode="normal";
+  if(ruleState.sel)applyRuleMode();else ruleInfo.hidden=true;
+  saveRule();
+});
+$("recBtn").addEventListener("click",()=>{
+  if(!ruleState.sel)return;
+  ruleState.mode=ruleState.mode==="rec"?"normal":"rec";
+  applyRuleMode();saveRule();
+});
+try{
+  const s=JSON.parse(localStorage.getItem("lotxau_rules")||"null");
+  if(s&&s.sel&&RULE_BALANCES[+s.sel-1]!=null){ruleState={sel:String(s.sel),mode:s.mode==="rec"?"rec":"normal"};ruleSel.value=ruleState.sel;applyRuleMode();}
+}catch(e){}
