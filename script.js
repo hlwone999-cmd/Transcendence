@@ -1,6 +1,7 @@
 /* Kalkulator Lot XAUUSD (IDR) — script.js
    Algoritma lot, tabel SL/TP, matriks risk %, dan Monte Carlo. */
-const LOTS=Array.from({length:150},(_,i)=>Math.round((i+1))/100); // 0.01 … 1.50, kelipatan 0.01
+const LOTS=Array.from({length:1000},(_,i)=>(i+1)/100); // 0.01 … 10.00, kelipatan 0.01
+const MAXLOT=10; // batas lot otomatis: mentok 10.00, lebihnya = peringatan
 const $=id=>document.getElementById(id);
 function parseAmt(raw,isMoney){
   let s=String(raw).trim().toLowerCase().replace(/\s|rp|\$|idr|usd/g,"");if(!s)return NaN;
@@ -29,7 +30,7 @@ function calc(){
   $("balHint").textContent=isFinite(bal)?`Terbaca: ${idr(bal)}`+(bal<100000?" — pastikan nominalnya benar (bisa ketik 1.500.000 atau 1,5jt)":""):"Contoh: 10.000.000 atau 10jt";
   $("balHint").className="hint"+(isFinite(bal)&&bal<100000?" bad":"");
   const ok=[bal,kurs,rp,ratio].every(v=>isFinite(v)&&v>0);
-  if(!ok){["rIdr","rUsd","tIdr","tUsd"].forEach(i=>$(i).textContent="–");$("tbody").innerHTML=`<tr><td colspan="5" style="text-align:left;color:var(--muted)">Lengkapi balance, kurs, risk, dan rasio dengan angka lebih dari nol.</td></tr>`;$("pickmsg").textContent="";rows=[];$("mx").innerHTML="";$("auto").classList.add("empty");$("aLot").textContent="–";convert();return;}
+  if(!ok){["rIdr","rUsd","tIdr","tUsd"].forEach(i=>$(i).textContent="–");$("tbody").innerHTML=`<tr><td colspan="5" style="text-align:left;color:var(--muted)">Lengkapi balance, kurs, risk, dan rasio dengan angka lebih dari nol.</td></tr>`;$("pickmsg").textContent="";rows=[];tblArgs=null;clearTimeout(tblT);$("mx").innerHTML="";$("auto").classList.add("empty");setLot("–");convert();return;}
   const riskIdr=bal*rp/100,riskUsd=riskIdr/kurs,tgtIdr=riskIdr*ratio,tgtUsd=tgtIdr/kurs;
   $("rIdr").textContent=idr(riskIdr);$("rUsd").textContent=usd(riskUsd)+` · ${rp}% balance`;
   $("tIdr").textContent=idr(tgtIdr);$("tUsd").textContent=usd(tgtUsd)+` · 1:${ratio}`;
@@ -40,13 +41,20 @@ function calc(){
   // pick: largest lot whose SL pips still >= planned SL
   let pick=-1;
   if(isFinite(plan)&&plan>0){rows.forEach((r,i)=>{if(r.sl>=plan)pick=i;});}
+  renderTablesSoon(bal,kurs,rp,plan,pick);
+  renderAuto(riskUsd,kurs,ratio,plan,bal,rp);
+  convert();save();
+}
+// tabel utama + matriks dirender dengan debounce (sekarang 1000 baris, biar ngetik tetap lancar)
+let tblT=0,tblArgs=null;
+function renderTablesSoon(bal,kurs,rp,plan,pick){tblArgs=[bal,kurs,rp,plan,pick];clearTimeout(tblT);tblT=setTimeout(renderTablesNow,120);}
+function renderTablesNow(){
+  if(!tblArgs)return;const[bal,kurs,rp,plan,pick]=tblArgs;
   $("tbody").innerHTML=rows.map((r,i)=>`<tr class="${i===pick?"pick":""}${r.sl<10?" tight":""}"><td class="lot">${lotTxt(r.lot)}</td><td class="sl">${one(r.sl)}</td><td class="tp">${one(r.tp)}</td><td>${r.r.toLocaleString("id-ID")}</td><td>${r.t.toLocaleString("id-ID")}</td></tr>`).join("");
   $("pickmsg").textContent="";
   requestAnimationFrame(()=>{const tr=document.querySelector("#tbody tr.pick"),box=tr&&tr.closest(".tbl");
     if(tr&&box){box.scrollTop=tr.offsetTop-box.clientHeight/2+tr.offsetHeight/2;}});
-  renderAuto(riskUsd,kurs,ratio,plan,bal,rp);
   renderMatrix(bal,kurs,rp,plan);
-  convert();save();
 }
 const PCTS=[1,2,3,5,10,15,20,25,50,100];
 function renderMatrix(bal,kurs,rp,plan){
@@ -64,21 +72,26 @@ function renderMatrix(bal,kurs,rp,plan){
   });
   $("mx").innerHTML=h+"</tbody>";
 }
+function setLot(t,bad){const el=$("aLot");el.textContent=t;el.style.color=bad?"var(--red)":"";}
 function renderAuto(riskUsd,kurs,ratio,plan,bal,rp){
   const box=$("auto");
-  if(!(isFinite(plan)&&plan>0)){box.classList.add("empty");$("aLot").textContent="–";
+  if(!(isFinite(plan)&&plan>0)){box.classList.add("empty");setLot("–");
     $("aSub").textContent="Isi maksimal SL (pips) untuk menghitung lot otomatis.";return;}
   box.classList.remove("empty");
   const exact=riskUsd/(plan*10), lot=Math.floor(exact*100+1e-9)/100;
   const minRiskIdr=plan*0.01*10*kurs;
   if(lot<0.01){
     const needPct=minRiskIdr/bal*100, needBal=minRiskIdr/(rp/100);
-    $("aLot").textContent="0.00";
+    setLot("0.00");
     $("aSub").textContent=`Belum cukup untuk 0.01 lot. SL ${one(plan)} pips di 0.01 lot = ${idr(minRiskIdr)}, sedangkan risiko ${rp}% hanya ${idr(bal*rp/100)}. `+
       (needPct<=100?`Butuh risk minimal ${needPct.toFixed(2)}%, atau balance minimal ${idr(needBal)} di risk ${rp}%, atau SL maksimal ${one(Math.floor(riskUsd/0.1*10)/10)} pips.`:`Balance ${idr(bal)} bahkan tidak menutup 0.01 lot untuk SL ini — cek lagi nominal balance.`);
     $("aRisk").textContent=idr(minRiskIdr);$("aTp").textContent=one(plan*ratio);$("aTgt").textContent=idr(minRiskIdr*ratio);$("aPip").textContent=idr(0.1*kurs);return;}
+  if(lot>MAXLOT){
+    setLot("10.00+",true);
+    $("aSub").textContent=`Butuh ${exact.toFixed(2)} lot — melebihi batas ${lotTxt(MAXLOT)} lot. Kecilkan risk % atau perbesar SL minimal ${one(Math.ceil(riskUsd/(MAXLOT*10)*10-1e-9)/10)} pips di ${lotTxt(MAXLOT)} lot.`;
+    $("aRisk").textContent="–";$("aTp").textContent=one(plan*ratio)+" pips";$("aTgt").textContent="–";$("aPip").textContent="–";return;}
   const act=plan*lot*10*kurs;
-  $("aLot").textContent=lot.toFixed(2);
+  setLot(lot.toFixed(2));
   $("aSub").textContent=`SL ${one(plan)} pips · lot presisi ${exact.toFixed(3)} dibulatkan ke bawah`;
   $("aRisk").textContent=idr(act)+` (${(act/bal*100).toFixed(2)}%)`;
   $("aTp").textContent=one(plan*ratio)+" pips";

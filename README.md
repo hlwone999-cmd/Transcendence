@@ -33,8 +33,8 @@ Asumsi XAUUSD: 1 lot = 100 oz, 1 pip = $0,10 per oz, sehingga **0,01 lot × 10 p
 ## Fitur
 
 - **Rules Recovery 1–35** — pilih rules dari tabel recovery (pola: naik +20%, SL 10%), balance/risk/rasio terisi otomatis dan lot langsung muncul. Ada tombol mode recovery: balance jadi sisa setelah SL 10%, risk X 7,41% dengan rasio 1:1 — sekali menang balik persis ke balance rules sebelumnya (Rules 1: X 11,11% balik ke balance awal). Pilihan tersimpan otomatis, opsi "Manual" mengembalikan kontrol penuh.
-- **Lot otomatis** dari maksimal SL, lengkap dengan risiko aktual, TP pips, target profit, dan nilai per pip.
-- **Tabel lot 0.01–1.50** (kelipatan 0.01) berisi SL pips, TP pips, risk, dan target.
+- **Lot otomatis** dari maksimal SL, lengkap dengan risiko aktual, TP pips, target profit, dan nilai per pip. Batas 10.00 lot — kalau kebutuhannya lebih besar, muncul peringatan merah beserta SL minimal yang dibutuhkan.
+- **Tabel lot 0.01–10.00** (kelipatan 0.01) berisi SL pips, TP pips, risk, dan target.
 - **Matriks SL pips × risk %** (1% sampai 100%) untuk semua lot.
 - **Kurs live** dari API publik (open.er-api.com, cadangan frankfurter.app), tanpa API key. Tersedia juga tombol kurs tetap 10.000 untuk broker lokal.
 - **Monte Carlo**: win rate, jumlah trade, spread/komisi, batas drawdown, compounding. Menampilkan peluang profit, ekspektasi per trade (R), win rate impas, drawdown, loss beruntun, dan grafik.
