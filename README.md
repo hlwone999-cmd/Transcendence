@@ -17,22 +17,6 @@ Butuh internet hanya untuk font Google dan kurs USD/IDR live. Kalau offline, kal
 | `style.css` | Tampilan (otomatis mengikuti mode gelap/terang perangkat) |
 | `script.js` | Semua logika: kalkulasi lot, tabel, kurs live, export CSV, Monte Carlo |
 
-## Fitur akun trading MT4/MT5 (terpisah dari kalkulator)
-
-Halaman `trading.html` menambahkan dashboard statistik trading (win rate, profit
-factor, drawdown, kurva balance, riwayat transaksi) dengan tiga mode:
-
-- **Impor laporan** — tanpa install apa pun: muat laporan MT4/MT5 (HTML/CSV)
-  atau JSON hasil skrip `mt-export/`; semua dihitung di browser, tanpa Python.
-  Ini mode yang dipakai bila halaman di-hosting statis (GitHub Pages/Vercel).
-- **Mode demonstrasi** — data contoh, diberi label DEMO.
-- **Live (opsional)** — jalankan backend Python (`pip install -r backend/requirements.txt`,
-  lalu `python backend/app.py`) dan buka `http://127.0.0.1:5000/trading.html`.
-  Panduan lengkap: `docs/MT4-MT5-FITUR.md`.
-
-Read-only: tidak ada endpoint atau tombol untuk mengirim order. Kalkulator lama
-tidak berubah.
-
 ## Algoritma
 
 ```
